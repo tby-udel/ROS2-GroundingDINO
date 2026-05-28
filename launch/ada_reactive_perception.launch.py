@@ -48,6 +48,11 @@ def generate_launch_description():
             description="Inference device",
         ),
         DeclareLaunchArgument(
+            "precision",
+            default_value="fp32",
+            description="Inference precision: fp32 or fp16",
+        ),
+        DeclareLaunchArgument(
             "input_image_topic",
             default_value="/camera/camera/color/image_raw",
             description="Input image topic",
@@ -96,6 +101,7 @@ def generate_launch_description():
                 "image_size": ParameterValue(LaunchConfiguration("image_size"), value_type=int),
                 "max_size": ParameterValue(LaunchConfiguration("max_size"), value_type=int),
                 "device": LaunchConfiguration("device"),
+                "precision": LaunchConfiguration("precision"),
                 "initial_query": LaunchConfiguration("initial_query"),
                 "publish_output_image": ParameterValue(LaunchConfiguration("publish_output_image"), value_type=bool),
                 "publish_legacy_outputs": ParameterValue(LaunchConfiguration("publish_legacy_outputs"), value_type=bool),

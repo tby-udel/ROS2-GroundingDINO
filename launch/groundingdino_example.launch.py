@@ -38,6 +38,11 @@ def generate_launch_description():
             description="Inference device",
         ),
         DeclareLaunchArgument(
+            "precision",
+            default_value="fp32",
+            description="Inference precision: fp32 or fp16",
+        ),
+        DeclareLaunchArgument(
             "initial_query",
             default_value="a person, a box",
             description="Initial comma-separated open-vocabulary query",
@@ -68,6 +73,7 @@ def generate_launch_description():
                 "box_threshold": ParameterValue(LaunchConfiguration("thresholds"), value_type=float),
                 "text_threshold": ParameterValue(LaunchConfiguration("text_threshold"), value_type=float),
                 "device": LaunchConfiguration("device"),
+                "precision": LaunchConfiguration("precision"),
                 "initial_query": LaunchConfiguration("initial_query"),
                 "publish_output_image": ParameterValue(LaunchConfiguration("publish_output_image"), value_type=bool),
                 "publish_legacy_outputs": ParameterValue(LaunchConfiguration("publish_legacy_outputs"), value_type=bool),

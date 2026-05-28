@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import gc
 from pathlib import Path
 
 import cv2
@@ -50,6 +51,17 @@ def _as_int(value, default):
         return default
 
 
+def _normalize_precision(value):
+    precision = str(value or "fp32").strip().lower()
+    if precision in ("float16", "half", "16"):
+        return "fp16"
+    if precision in ("float32", "full", "32"):
+        return "fp32"
+    if precision not in ("fp16", "fp32"):
+        return "fp32"
+    return precision
+
+
 def _normalize_text(text):
     text = text.strip().lower()
     text = re.sub(r"\s+", " ", text)
@@ -86,7 +98,7 @@ def set_bbox_center(bbox, x, y):
 
 
 class GroundingDINOPredictor:
-    def __init__(self, groundingdino_dir, config_path, checkpoint_path, device, image_size, max_size):
+    def __init__(self, groundingdino_dir, config_path, checkpoint_path, device, image_size, max_size, precision="fp32"):
         groundingdino_root = Path(groundingdino_dir).expanduser().resolve()
         if str(groundingdino_root) not in sys.path:
             sys.path.insert(0, str(groundingdino_root))
@@ -99,16 +111,26 @@ class GroundingDINOPredictor:
         from groundingdino.util.utils import get_phrases_from_posmap
 
         self.device = device
+        self.precision = _normalize_precision(precision)
+        self.tensor_dtype = torch.float16 if self.precision == "fp16" and str(device).startswith("cuda") else torch.float32
         self.preprocess_caption = preprocess_caption
         self.get_phrases_from_posmap = get_phrases_from_posmap
 
         args = SLConfig.fromfile(str(config_path))
-        args.device = device
+        # Build on CPU first for FP16 CUDA so parameters can be narrowed before
+        # the large device transfer on memory-constrained Jetsons.
+        args.device = "cpu" if self.tensor_dtype == torch.float16 else device
         self.model = build_model(args)
 
         checkpoint = torch.load(str(checkpoint_path), map_location="cpu")
         state_dict = checkpoint["model"] if isinstance(checkpoint, dict) and "model" in checkpoint else checkpoint
         self.load_message = self.model.load_state_dict(clean_state_dict(state_dict), strict=False)
+        del checkpoint
+        del state_dict
+        gc.collect()
+        if self.tensor_dtype == torch.float16:
+            self.model.half()
+            torch.cuda.empty_cache()
         self.model.to(device)
         self.model.eval()
 
@@ -129,7 +151,7 @@ class GroundingDINOPredictor:
         return image_tensor
 
     def predict(self, image_bgr, caption, box_threshold, text_threshold):
-        image_tensor = self.preprocess_image(image_bgr).to(self.device)
+        image_tensor = self.preprocess_image(image_bgr).to(device=self.device, dtype=self.tensor_dtype)
         caption = self.preprocess_caption(caption)
 
         with torch.no_grad():
@@ -172,6 +194,7 @@ class GroundingDINOSubscriber(Node):
         self.declare_parameter("text_threshold", 0.25)
         self.declare_parameter("image_size", 800)
         self.declare_parameter("max_size", 1333)
+        self.declare_parameter("precision", "fp32")
         self.declare_parameter("initial_query", "a person, a box")
         self.declare_parameter("publish_output_image", False)
         self.declare_parameter("publish_legacy_outputs", False)
@@ -212,6 +235,10 @@ class GroundingDINOSubscriber(Node):
         self.text_threshold = _as_float(self.get_parameter("text_threshold").value, 0.25)
         self.image_size = _as_int(self.get_parameter("image_size").value, 800)
         self.max_size = _as_int(self.get_parameter("max_size").value, 1333)
+        self.precision = _normalize_precision(self.get_parameter("precision").value)
+        if self.precision == "fp16" and not str(device).startswith("cuda"):
+            self.get_logger().warning("FP16 is only enabled for CUDA inference; using FP32 tensors on CPU.")
+            self.precision = "fp32"
         self.publish_output_image = _as_bool(self.get_parameter("publish_output_image").value)
         self.publish_legacy_outputs = _as_bool(self.get_parameter("publish_legacy_outputs").value)
         self.legacy_detection_topic = str(self.get_parameter("legacy_detection_topic").value)
@@ -225,6 +252,10 @@ class GroundingDINOSubscriber(Node):
         self._update_query_cache(initial_query)
 
         self.get_logger().info(f"Loading GroundingDINO from {checkpoint_path}")
+        self.get_logger().info(
+            f"GroundingDINO runtime: device={self.device}, precision={self.precision}, "
+            f"image_size={self.image_size}, max_size={self.max_size}"
+        )
         self.predictor = GroundingDINOPredictor(
             groundingdino_dir=groundingdino_dir,
             config_path=config_path,
@@ -232,6 +263,7 @@ class GroundingDINOSubscriber(Node):
             device=self.device,
             image_size=self.image_size,
             max_size=self.max_size,
+            precision=self.precision,
         )
         self.get_logger().info("GroundingDINO ready.")
 
@@ -386,4 +418,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-
