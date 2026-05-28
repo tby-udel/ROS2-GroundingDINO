@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ROS 2 workspaces
+build/
+install/
+log/
+
+# Local outputs
+outputs/
+output/
+logs/
+*.log
+*.jsonl
+*.mp4
+*.avi
+*.bag
+*.db3
+metadata.yaml
+
+# Model artifacts
+weights/
+*.pth
+*.pt
+*.onnx
+*.engine
+
+# Editor
+.vscode/
+.idea/
