@@ -9,23 +9,33 @@ def generate_launch_description():
     launch_args = [
         DeclareLaunchArgument(
             "groundingdino_dir",
-            default_value="/home/boyang/safeai/GroundingDINO",
-            description="Path to the local GroundingDINO checkout",
+            default_value="/home/ada2/GroundingDINO",
+            description="Path to the local GroundingDINO checkout on the Jetson",
         ),
         DeclareLaunchArgument(
             "config",
-            default_value="/home/boyang/safeai/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
+            default_value="/home/ada2/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
             description="GroundingDINO model config",
         ),
         DeclareLaunchArgument(
             "checkpoint",
-            default_value="/home/boyang/safeai/GroundingDINO/weights/groundingdino_swint_ogc.pth",
+            default_value="/home/ada2/GroundingDINO/weights/groundingdino_swint_ogc.pth",
             description="GroundingDINO checkpoint",
         ),
         DeclareLaunchArgument(
+            "input_image_topic",
+            default_value="/camera/camera/color/image_raw",
+            description="Input image topic",
+        ),
+        DeclareLaunchArgument(
+            "initial_query",
+            default_value="stop sign, garbage bin",
+            description="Initial comma-separated open-vocabulary query",
+        ),
+        DeclareLaunchArgument(
             "thresholds",
-            default_value="0.3",
-            description="NanoOWL-compatible detection threshold",
+            default_value="0.35",
+            description="Higher threshold reduces output load and false positives",
         ),
         DeclareLaunchArgument(
             "text_threshold",
@@ -34,13 +44,33 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "image_size",
-            default_value="800",
-            description="GroundingDINO resize short-edge target before inference",
+            default_value="224",
+            description="Aggressive short-edge resize for Jetson Orin Nano 8GB",
         ),
         DeclareLaunchArgument(
             "max_size",
-            default_value="1333",
-            description="GroundingDINO maximum long-edge size before inference",
+            default_value="320",
+            description="Aggressive long-edge cap for Jetson Orin Nano 8GB",
+        ),
+        DeclareLaunchArgument(
+            "frame_stride",
+            default_value="3",
+            description="Process one image every N incoming frames",
+        ),
+        DeclareLaunchArgument(
+            "max_detections",
+            default_value="20",
+            description="Maximum detections retained after thresholding",
+        ),
+        DeclareLaunchArgument(
+            "empty_cache_every_n_frames",
+            default_value="8",
+            description="Release cached CUDA blocks periodically on memory-constrained Jetsons",
+        ),
+        DeclareLaunchArgument(
+            "torch_num_threads",
+            default_value="2",
+            description="Limit CPU thread pressure on Jetson",
         ),
         DeclareLaunchArgument(
             "device",
@@ -50,58 +80,39 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "precision",
             default_value="fp32",
-            description="Inference precision: fp32 or fp16",
-        ),
-        DeclareLaunchArgument(
-            "frame_stride",
-            default_value="1",
-            description="Process one image every N incoming frames",
-        ),
-        DeclareLaunchArgument(
-            "max_detections",
-            default_value="100",
-            description="Maximum detections retained after thresholding; 0 keeps all",
-        ),
-        DeclareLaunchArgument(
-            "empty_cache_every_n_frames",
-            default_value="0",
-            description="Call torch.cuda.empty_cache every N processed frames; 0 disables",
-        ),
-        DeclareLaunchArgument(
-            "torch_num_threads",
-            default_value="0",
-            description="Set PyTorch CPU worker threads when >0",
-        ),
-        DeclareLaunchArgument(
-            "disable_model_checkpointing",
-            default_value="true",
-            description="Disable inference-time checkpoint wrappers where present",
-        ),
-        DeclareLaunchArgument(
-            "initial_query",
-            default_value="a person, a box",
-            description="Initial comma-separated open-vocabulary query",
+            description="Keep FP32 by default because PyTorch FP16 failed on Jetson in testing",
         ),
         DeclareLaunchArgument(
             "publish_output_image",
             default_value="false",
-            description="Publish annotated image to output_image",
+            description="Disable annotated output image for minimum memory and CPU load",
         ),
         DeclareLaunchArgument(
             "publish_legacy_outputs",
-            default_value="false",
-            description="Publish compatibility outputs on legacy topics",
+            default_value="true",
+            description="Keep ADAONE-compatible detection string output",
         ),
         DeclareLaunchArgument(
             "publish_legacy_image",
-            default_value="true",
-            description="Publish annotated compatibility image on legacy_image_topic",
+            default_value="false",
+            description="Disable legacy annotated image for strongest compression",
+        ),
+        DeclareLaunchArgument(
+            "legacy_detection_topic",
+            default_value="/yolo/detections",
+            description="Compatibility detection topic",
+        ),
+        DeclareLaunchArgument(
+            "legacy_image_topic",
+            default_value="/yolo/inference_image",
+            description="Compatibility image topic",
         ),
     ]
 
     groundingdino_node = Node(
         package="ros2_groundingdino",
         executable="groundingdino_py",
+        remappings=[("input_image", LaunchConfiguration("input_image_topic"))],
         parameters=[
             {
                 "groundingdino_dir": LaunchConfiguration("groundingdino_dir"),
@@ -114,8 +125,6 @@ def generate_launch_description():
                 "text_threshold": ParameterValue(LaunchConfiguration("text_threshold"), value_type=float),
                 "image_size": ParameterValue(LaunchConfiguration("image_size"), value_type=int),
                 "max_size": ParameterValue(LaunchConfiguration("max_size"), value_type=int),
-                "device": LaunchConfiguration("device"),
-                "precision": LaunchConfiguration("precision"),
                 "frame_stride": ParameterValue(LaunchConfiguration("frame_stride"), value_type=int),
                 "max_detections": ParameterValue(LaunchConfiguration("max_detections"), value_type=int),
                 "empty_cache_every_n_frames": ParameterValue(
@@ -123,14 +132,15 @@ def generate_launch_description():
                     value_type=int,
                 ),
                 "torch_num_threads": ParameterValue(LaunchConfiguration("torch_num_threads"), value_type=int),
-                "disable_model_checkpointing": ParameterValue(
-                    LaunchConfiguration("disable_model_checkpointing"),
-                    value_type=bool,
-                ),
+                "disable_model_checkpointing": True,
+                "device": LaunchConfiguration("device"),
+                "precision": LaunchConfiguration("precision"),
                 "initial_query": LaunchConfiguration("initial_query"),
                 "publish_output_image": ParameterValue(LaunchConfiguration("publish_output_image"), value_type=bool),
                 "publish_legacy_outputs": ParameterValue(LaunchConfiguration("publish_legacy_outputs"), value_type=bool),
                 "publish_legacy_image": ParameterValue(LaunchConfiguration("publish_legacy_image"), value_type=bool),
+                "legacy_detection_topic": LaunchConfiguration("legacy_detection_topic"),
+                "legacy_image_topic": LaunchConfiguration("legacy_image_topic"),
             }
         ],
     )

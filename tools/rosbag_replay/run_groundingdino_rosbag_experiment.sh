@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 if [[ $# -lt 5 ]]; then
-  echo "Usage: $0 <name> <bag_dir> <initial_prompt> <labels_csv> <output_dir> [rate] [threshold] [text_threshold] [device] [publish_output_image] [publish_legacy_outputs] [query_schedule] [play_timeout] [image_size] [max_size]" >&2
+  echo "Usage: $0 <name> <bag_dir> <initial_prompt> <labels_csv> <output_dir> [rate] [threshold] [text_threshold] [device] [publish_output_image] [publish_legacy_outputs] [query_schedule] [play_timeout] [image_size] [max_size] [publish_legacy_image]" >&2
   exit 2
 fi
 
@@ -21,6 +21,7 @@ QUERY_SCHEDULE="${12:-}"
 PLAY_TIMEOUT="${13:-0}"
 IMAGE_SIZE="${14:-800}"
 MAX_SIZE="${15:-1333}"
+PUBLISH_LEGACY_IMAGE="${16:-true}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -76,6 +77,7 @@ stdbuf -oL -eL ros2 launch ros2_groundingdino ada_reactive_perception.launch.py 
   initial_query:="${INITIAL_PROMPT}" \
   publish_output_image:="${PUBLISH_OUTPUT_IMAGE}" \
   publish_legacy_outputs:="${PUBLISH_LEGACY_OUTPUTS}" \
+  publish_legacy_image:="${PUBLISH_LEGACY_IMAGE}" \
   thresholds:="${THRESHOLD}" \
   text_threshold:="${TEXT_THRESHOLD}" \
   device:="${DEVICE}" \

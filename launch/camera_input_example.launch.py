@@ -33,9 +33,49 @@ def generate_launch_description():
             description="GroundingDINO phrase grounding threshold",
         ),
         DeclareLaunchArgument(
+            "image_size",
+            default_value="800",
+            description="GroundingDINO resize short-edge target before inference",
+        ),
+        DeclareLaunchArgument(
+            "max_size",
+            default_value="1333",
+            description="GroundingDINO maximum long-edge size before inference",
+        ),
+        DeclareLaunchArgument(
             "device",
             default_value="cuda",
             description="Inference device",
+        ),
+        DeclareLaunchArgument(
+            "precision",
+            default_value="fp32",
+            description="Inference precision: fp32 or fp16",
+        ),
+        DeclareLaunchArgument(
+            "frame_stride",
+            default_value="1",
+            description="Process one image every N incoming frames",
+        ),
+        DeclareLaunchArgument(
+            "max_detections",
+            default_value="100",
+            description="Maximum detections retained after thresholding; 0 keeps all",
+        ),
+        DeclareLaunchArgument(
+            "empty_cache_every_n_frames",
+            default_value="0",
+            description="Call torch.cuda.empty_cache every N processed frames; 0 disables",
+        ),
+        DeclareLaunchArgument(
+            "torch_num_threads",
+            default_value="0",
+            description="Set PyTorch CPU worker threads when >0",
+        ),
+        DeclareLaunchArgument(
+            "disable_model_checkpointing",
+            default_value="true",
+            description="Disable inference-time checkpoint wrappers where present",
         ),
         DeclareLaunchArgument(
             "initial_query",
@@ -68,7 +108,21 @@ def generate_launch_description():
                 "thresholds": ParameterValue(LaunchConfiguration("thresholds"), value_type=float),
                 "box_threshold": ParameterValue(LaunchConfiguration("thresholds"), value_type=float),
                 "text_threshold": ParameterValue(LaunchConfiguration("text_threshold"), value_type=float),
+                "image_size": ParameterValue(LaunchConfiguration("image_size"), value_type=int),
+                "max_size": ParameterValue(LaunchConfiguration("max_size"), value_type=int),
                 "device": LaunchConfiguration("device"),
+                "precision": LaunchConfiguration("precision"),
+                "frame_stride": ParameterValue(LaunchConfiguration("frame_stride"), value_type=int),
+                "max_detections": ParameterValue(LaunchConfiguration("max_detections"), value_type=int),
+                "empty_cache_every_n_frames": ParameterValue(
+                    LaunchConfiguration("empty_cache_every_n_frames"),
+                    value_type=int,
+                ),
+                "torch_num_threads": ParameterValue(LaunchConfiguration("torch_num_threads"), value_type=int),
+                "disable_model_checkpointing": ParameterValue(
+                    LaunchConfiguration("disable_model_checkpointing"),
+                    value_type=bool,
+                ),
                 "initial_query": LaunchConfiguration("initial_query"),
                 "publish_output_image": ParameterValue(LaunchConfiguration("publish_output_image"), value_type=bool),
             }

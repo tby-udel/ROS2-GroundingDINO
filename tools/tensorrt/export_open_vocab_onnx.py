@@ -129,7 +129,35 @@ class ExportNestedTensor:
         return self.tensors, self.mask
 
 
+PRESETS = {
+    "jetson-ultra": {
+        "height": 224,
+        "width": 320,
+        "max_text_len": 64,
+    },
+    "jetson-balanced": {
+        "height": 320,
+        "width": 480,
+        "max_text_len": 96,
+    },
+    "desktop-640": {
+        "height": 480,
+        "width": 640,
+        "max_text_len": 256,
+    },
+}
+
+
+def _resolve_preset(args):
+    preset = PRESETS[args.preset]
+    args.height = args.height if args.height is not None else preset["height"]
+    args.width = args.width if args.width is not None else preset["width"]
+    args.max_text_len = args.max_text_len if args.max_text_len is not None else preset["max_text_len"]
+    return args
+
+
 def export(args):
+    args = _resolve_preset(args)
     _groundingdino_root(args.groundingdino_dir)
     detector = _load_detector(
         Path(args.config).expanduser().resolve(),
@@ -178,12 +206,18 @@ def export(args):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--preset",
+        choices=sorted(PRESETS),
+        default="jetson-ultra",
+        help="Static export shape preset. jetson-ultra is the strongest compression preset.",
+    )
     parser.add_argument("--groundingdino-dir", required=True)
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--height", type=int, default=224)
-    parser.add_argument("--width", type=int, default=320)
-    parser.add_argument("--max-text-len", type=int, default=256)
+    parser.add_argument("--height", type=int, default=None)
+    parser.add_argument("--width", type=int, default=None)
+    parser.add_argument("--max-text-len", type=int, default=None)
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--dynamo", action="store_true", help="Use the newer torch.export-based ONNX exporter")
     parser.add_argument("--output", required=True)

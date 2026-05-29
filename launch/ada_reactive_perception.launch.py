@@ -53,6 +53,31 @@ def generate_launch_description():
             description="Inference precision: fp32 or fp16",
         ),
         DeclareLaunchArgument(
+            "frame_stride",
+            default_value="1",
+            description="Process one image every N incoming frames",
+        ),
+        DeclareLaunchArgument(
+            "max_detections",
+            default_value="100",
+            description="Maximum detections retained after thresholding; 0 keeps all",
+        ),
+        DeclareLaunchArgument(
+            "empty_cache_every_n_frames",
+            default_value="0",
+            description="Call torch.cuda.empty_cache every N processed frames; 0 disables",
+        ),
+        DeclareLaunchArgument(
+            "torch_num_threads",
+            default_value="0",
+            description="Set PyTorch CPU worker threads when >0",
+        ),
+        DeclareLaunchArgument(
+            "disable_model_checkpointing",
+            default_value="true",
+            description="Disable inference-time checkpoint wrappers where present",
+        ),
+        DeclareLaunchArgument(
             "input_image_topic",
             default_value="/camera/camera/color/image_raw",
             description="Input image topic",
@@ -71,6 +96,11 @@ def generate_launch_description():
             "publish_legacy_outputs",
             default_value="true",
             description="Publish compatibility outputs on legacy topics",
+        ),
+        DeclareLaunchArgument(
+            "publish_legacy_image",
+            default_value="true",
+            description="Publish annotated compatibility image on legacy_image_topic",
         ),
         DeclareLaunchArgument(
             "legacy_detection_topic",
@@ -102,9 +132,21 @@ def generate_launch_description():
                 "max_size": ParameterValue(LaunchConfiguration("max_size"), value_type=int),
                 "device": LaunchConfiguration("device"),
                 "precision": LaunchConfiguration("precision"),
+                "frame_stride": ParameterValue(LaunchConfiguration("frame_stride"), value_type=int),
+                "max_detections": ParameterValue(LaunchConfiguration("max_detections"), value_type=int),
+                "empty_cache_every_n_frames": ParameterValue(
+                    LaunchConfiguration("empty_cache_every_n_frames"),
+                    value_type=int,
+                ),
+                "torch_num_threads": ParameterValue(LaunchConfiguration("torch_num_threads"), value_type=int),
+                "disable_model_checkpointing": ParameterValue(
+                    LaunchConfiguration("disable_model_checkpointing"),
+                    value_type=bool,
+                ),
                 "initial_query": LaunchConfiguration("initial_query"),
                 "publish_output_image": ParameterValue(LaunchConfiguration("publish_output_image"), value_type=bool),
                 "publish_legacy_outputs": ParameterValue(LaunchConfiguration("publish_legacy_outputs"), value_type=bool),
+                "publish_legacy_image": ParameterValue(LaunchConfiguration("publish_legacy_image"), value_type=bool),
                 "legacy_detection_topic": LaunchConfiguration("legacy_detection_topic"),
                 "legacy_image_topic": LaunchConfiguration("legacy_image_topic"),
             }

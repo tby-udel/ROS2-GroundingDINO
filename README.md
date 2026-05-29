@@ -16,6 +16,7 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
   - `/yolo/detections`
   - `/yolo/inference_image`
 - Includes rosbag replay, output recording, query switching, and runtime profiling scripts under `tools/rosbag_replay/`
+- Includes a Jetson Orin Nano ultra-compression launch preset after PyTorch FP16 proved unstable on-device
 
 ## Repository Layout
 
@@ -28,8 +29,10 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 ├── ros2_groundingdino/
 │   └── groundingdino_node.py
 ├── tools/
-│   └── rosbag_replay/
+│   ├── rosbag_replay/
+│   └── tensorrt/
 └── docs/
+    ├── jetson_orin_nano_ultra_config.md
     └── runtime_experiments_2026-05-27.md
 ```
 
@@ -97,6 +100,34 @@ ros2 launch ros2_groundingdino ada_reactive_perception.launch.py \
 ```
 
 For our 640x480 rosbag experiments, `image_size:=480 max_size:=640` was much faster than the default GroundingDINO resize while keeping the stream near 15 Hz on the local RTX 4090 workstation.
+
+## Jetson Orin Nano Ultra Mode
+
+After PyTorch FP16 failed on Jetson Orin Nano, the strongest survival preset keeps FP32 and compresses the workload instead:
+
+```bash
+ros2 launch ros2_groundingdino jetson_orin_nano_ultra.launch.py \
+  groundingdino_dir:=/home/ada2/GroundingDINO \
+  config:=/home/ada2/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py \
+  checkpoint:=/home/ada2/GroundingDINO/weights/groundingdino_swint_ogc.pth \
+  input_image_topic:=/camera/camera/color/image_raw \
+  initial_query:="stop sign, garbage bin" \
+  precision:=fp32
+```
+
+Ultra defaults:
+
+- `image_size=224`
+- `max_size=320`
+- `frame_stride=3`
+- `max_detections=20`
+- `publish_output_image=false`
+- `publish_legacy_outputs=true`
+- `publish_legacy_image=false`
+- `empty_cache_every_n_frames=8`
+- `torch_num_threads=2`
+
+See [docs/jetson_orin_nano_ultra_config.md](docs/jetson_orin_nano_ultra_config.md) for the full Jetson rescue path and TensorRT export target.
 
 ## Runtime Query Switching
 

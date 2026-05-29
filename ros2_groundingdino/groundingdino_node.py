@@ -68,6 +68,14 @@ def _normalize_text(text):
     return text.strip(" .")
 
 
+def _disable_checkpointing(model):
+    for module in model.modules():
+        if hasattr(module, "use_checkpoint"):
+            module.use_checkpoint = False
+        if hasattr(module, "use_transformer_ckpt"):
+            module.use_transformer_ckpt = False
+
+
 def parse_query(query):
     prompt = query.strip().strip("][()")
     if "," in prompt:
@@ -98,7 +106,19 @@ def set_bbox_center(bbox, x, y):
 
 
 class GroundingDINOPredictor:
-    def __init__(self, groundingdino_dir, config_path, checkpoint_path, device, image_size, max_size, precision="fp32"):
+    def __init__(
+        self,
+        groundingdino_dir,
+        config_path,
+        checkpoint_path,
+        device,
+        image_size,
+        max_size,
+        precision="fp32",
+        max_detections=100,
+        disable_checkpointing=True,
+        torch_num_threads=0,
+    ):
         groundingdino_root = Path(groundingdino_dir).expanduser().resolve()
         if str(groundingdino_root) not in sys.path:
             sys.path.insert(0, str(groundingdino_root))
@@ -113,8 +133,11 @@ class GroundingDINOPredictor:
         self.device = device
         self.precision = _normalize_precision(precision)
         self.tensor_dtype = torch.float16 if self.precision == "fp16" and str(device).startswith("cuda") else torch.float32
+        self.max_detections = max(0, _as_int(max_detections, 100))
         self.preprocess_caption = preprocess_caption
         self.get_phrases_from_posmap = get_phrases_from_posmap
+        if _as_int(torch_num_threads, 0) > 0:
+            torch.set_num_threads(_as_int(torch_num_threads, 0))
 
         args = SLConfig.fromfile(str(config_path))
         # Build on CPU first for FP16 CUDA so parameters can be narrowed before
@@ -131,6 +154,8 @@ class GroundingDINOPredictor:
         if self.tensor_dtype == torch.float16:
             self.model.half()
             torch.cuda.empty_cache()
+        if disable_checkpointing:
+            _disable_checkpointing(self.model)
         self.model.to(device)
         self.model.eval()
 
@@ -164,6 +189,11 @@ class GroundingDINOPredictor:
         logits = logits[keep]
         boxes = boxes[keep]
         scores = scores[keep]
+        if self.max_detections > 0 and len(scores) > self.max_detections:
+            top_indices = torch.topk(scores, k=self.max_detections).indices
+            logits = logits[top_indices]
+            boxes = boxes[top_indices]
+            scores = scores[top_indices]
 
         tokenized = self.model.tokenizer(caption)
         phrases = []
@@ -195,15 +225,23 @@ class GroundingDINOSubscriber(Node):
         self.declare_parameter("image_size", 800)
         self.declare_parameter("max_size", 1333)
         self.declare_parameter("precision", "fp32")
+        self.declare_parameter("frame_stride", 1)
+        self.declare_parameter("max_detections", 100)
+        self.declare_parameter("empty_cache_every_n_frames", 0)
+        self.declare_parameter("torch_num_threads", 0)
+        self.declare_parameter("disable_model_checkpointing", True)
         self.declare_parameter("initial_query", "a person, a box")
         self.declare_parameter("publish_output_image", False)
         self.declare_parameter("publish_legacy_outputs", False)
+        self.declare_parameter("publish_legacy_image", True)
         self.declare_parameter("legacy_detection_topic", "/yolo/detections")
         self.declare_parameter("legacy_image_topic", "/yolo/inference_image")
         self.declare_parameter("drop_frames_when_busy", True)
 
         self.cv_br = CvBridge()
         self.processing_image = False
+        self.input_frame_count = 0
+        self.processed_frame_count = 0
 
         self.output_publisher = self.create_publisher(Detection2DArray, "output_detections", 10)
         self.output_image_publisher = self.create_publisher(Image, "output_image", 10)
@@ -239,8 +277,14 @@ class GroundingDINOSubscriber(Node):
         if self.precision == "fp16" and not str(device).startswith("cuda"):
             self.get_logger().warning("FP16 is only enabled for CUDA inference; using FP32 tensors on CPU.")
             self.precision = "fp32"
+        self.frame_stride = max(1, _as_int(self.get_parameter("frame_stride").value, 1))
+        self.max_detections = max(0, _as_int(self.get_parameter("max_detections").value, 100))
+        self.empty_cache_every_n_frames = max(0, _as_int(self.get_parameter("empty_cache_every_n_frames").value, 0))
+        self.torch_num_threads = max(0, _as_int(self.get_parameter("torch_num_threads").value, 0))
+        self.disable_model_checkpointing = _as_bool(self.get_parameter("disable_model_checkpointing").value)
         self.publish_output_image = _as_bool(self.get_parameter("publish_output_image").value)
         self.publish_legacy_outputs = _as_bool(self.get_parameter("publish_legacy_outputs").value)
+        self.publish_legacy_image = _as_bool(self.get_parameter("publish_legacy_image").value)
         self.legacy_detection_topic = str(self.get_parameter("legacy_detection_topic").value)
         self.legacy_image_topic = str(self.get_parameter("legacy_image_topic").value)
         self.drop_frames_when_busy = _as_bool(self.get_parameter("drop_frames_when_busy").value)
@@ -254,7 +298,8 @@ class GroundingDINOSubscriber(Node):
         self.get_logger().info(f"Loading GroundingDINO from {checkpoint_path}")
         self.get_logger().info(
             f"GroundingDINO runtime: device={self.device}, precision={self.precision}, "
-            f"image_size={self.image_size}, max_size={self.max_size}"
+            f"image_size={self.image_size}, max_size={self.max_size}, "
+            f"frame_stride={self.frame_stride}, max_detections={self.max_detections}"
         )
         self.predictor = GroundingDINOPredictor(
             groundingdino_dir=groundingdino_dir,
@@ -264,6 +309,9 @@ class GroundingDINOSubscriber(Node):
             image_size=self.image_size,
             max_size=self.max_size,
             precision=self.precision,
+            max_detections=self.max_detections,
+            disable_checkpointing=self.disable_model_checkpointing,
+            torch_num_threads=self.torch_num_threads,
         )
         self.get_logger().info("GroundingDINO ready.")
 
@@ -363,6 +411,10 @@ class GroundingDINOSubscriber(Node):
         return annotated
 
     def listener_callback(self, data):
+        self.input_frame_count += 1
+        if self.frame_stride > 1 and (self.input_frame_count - 1) % self.frame_stride != 0:
+            return
+
         if self.processing_image and self.drop_frames_when_busy:
             return
 
@@ -391,14 +443,23 @@ class GroundingDINOSubscriber(Node):
                 legacy_message = "; ".join(legacy_detections) if legacy_detections else "no detections"
                 self.legacy_detection_publisher.publish(String(data=legacy_message))
 
-            if self.publish_output_image or self.publish_legacy_outputs:
+            should_publish_legacy_image = self.publish_legacy_outputs and self.publish_legacy_image
+            if self.publish_output_image or should_publish_legacy_image:
                 image = self._draw_detections(cv_img, boxes, scores, phrases)
                 image_msg = self.cv_br.cv2_to_imgmsg(image, "bgr8")
                 image_msg.header = data.header
                 if self.publish_output_image:
                     self.output_image_publisher.publish(image_msg)
-                if self.publish_legacy_outputs:
+                if should_publish_legacy_image:
                     self.legacy_image_publisher.publish(image_msg)
+
+            self.processed_frame_count += 1
+            if (
+                self.empty_cache_every_n_frames > 0
+                and self.device.startswith("cuda")
+                and self.processed_frame_count % self.empty_cache_every_n_frames == 0
+            ):
+                torch.cuda.empty_cache()
 
             elapsed_ms = (time.time() - start) * 1000.0
             self.get_logger().debug(f"GroundingDINO frame processed in {elapsed_ms:.1f} ms")
