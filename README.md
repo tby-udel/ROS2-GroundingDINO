@@ -214,6 +214,93 @@ ROS_DOMAIN_ID=82 bash tools/rosbag_replay/run_groundingdino_rosbag_experiment.sh
 
 See [docs/runtime_experiments_2026-05-27.md](docs/runtime_experiments_2026-05-27.md) for the local query switching and runtime profiling results.
 
+## Jetson TensorRT Compression Findings
+
+We tested an aggressively compressed open-vocabulary TensorRT path on a Jetson Orin Nano using the local NanoOWL Docker environment. The goal was to see whether GroundingDINO could be compressed enough to run directly on the small Jetson while preserving open-vocabulary prompts.
+
+The tested engine kept the text encoder outside TensorRT, so the prompt remained open-vocabulary at runtime. The TensorRT engine received image tensors plus encoded text tensors:
+
+```text
+image: 1x3x128x192 FP16
+encoded_text: 1x32x256 FP16
+text_token_mask: 1x32 BOOL
+position_ids: 1x32 INT64
+text_self_attention_masks: 1x32x32 BOOL
+outputs: pred_logits 1x100x32, pred_boxes 1x100x4
+```
+
+The compression settings were:
+
+- Input resolution: `128x192`
+- Max text length: `32`
+- Object queries: `100`
+- Transformer depth: `2` encoder layers and `2` decoder layers, down from the original `6/6`
+- Precision: FP16 ONNX converted to a TensorRT engine
+
+These settings are captured in the exporter as `--preset jetson-tiny-e2d2`. This preset is useful for reproducing the failed experiment, not as a recommended deployment target.
+
+The engine built and executed successfully on the Jetson Orin Nano. A `trtexec` smoke test reported about `66 ms` GPU latency, roughly `15 FPS` engine-only throughput.
+
+### Rosbag Test Result
+
+We rendered the local rosbag:
+
+```text
+testing_rosbags/indoor_640x480_15hz
+```
+
+with the query:
+
+```text
+Box, monitor, toolbox, small robot car, chair, stop sign
+```
+
+using:
+
+```bash
+source /opt/ros/humble/setup.bash
+python3 tools/tensorrt/run_trt_rosbag_video.py \
+  --query "Box, monitor, toolbox, small robot car, chair, stop sign" \
+  --bag /workspaces/isaac_ros-dev/testing_rosbags/indoor_640x480_15hz \
+  --topic /camera/camera/color/image_raw \
+  --box-threshold 0.7 \
+  --text-threshold 0.5 \
+  --max-detections 15 \
+  --output artifacts/rosbag_tests/indoor_640x480_15hz_groundingdino_trt_e2d2_fp16_box070_text050.mp4
+```
+
+Observed runtime for the full 466-frame bag:
+
+- Video size: `640x480`, `15 FPS`
+- Mean TensorRT inference time: `65.7 ms/frame`
+- End-to-end script throughput: about `9.1 FPS`, including rosbag decode, postprocessing, annotation, and MP4 writing
+- Total displayed detections: `3500`
+
+The model output was not usable. The detections were mostly incorrect, with many false positives and repeated `monitor` / `chair` predictions. Lower thresholds flooded every frame with detections, while stricter thresholds reduced clutter but still did not recover correct object grounding.
+
+### Conclusion
+
+This compressed engine proves that a small open-vocabulary GroundingDINO-style TensorRT graph can run on the Jetson Orin Nano, but this specific compression recipe destroys detection quality. It should not be used as a deployable detector.
+
+The likely causes are:
+
+- The `128x192` input resolution removes too much visual detail for small indoor objects.
+- Truncating the transformer from `6/6` layers to `2/2` layers without retraining or distillation loses the grounding behavior.
+- The output score distribution becomes poorly calibrated, so thresholds no longer behave like the original model.
+
+### Recommended Next Steps
+
+Do not compress further from this engine. The next work should preserve accuracy first, then optimize.
+
+1. Run a golden baseline on sampled frames from the same rosbag using the original PyTorch GroundingDINO model.
+2. Export a higher-fidelity FP16 TensorRT engine with the full `6/6` transformer depth.
+3. Reduce image size gradually, for example `224x320` or `256x384`, and compare against the PyTorch baseline frame by frame.
+4. Only after FP16 parity is acceptable, try INT8 post-training quantization with calibration images sampled from representative indoor rosbags.
+5. Avoid FP8 as a primary target on Jetson Orin Nano. The Nano does not provide the same FP8 acceleration path as newer data-center GPUs.
+6. If full-depth GroundingDINO remains too heavy, use GroundingDINO as an offline teacher for distillation or switch the runtime detector back toward NanoOWL/OWL-ViT-style models.
+
+The practical next artifact should be an accuracy audit: side-by-side outputs from PyTorch GroundingDINO, ONNX, and TensorRT on identical sampled rosbag frames.
+
 ## Notes
 
 This package wraps the PyTorch GroundingDINO implementation. It does not include model weights, TensorRT engines, build directories, rosbag files, or generated videos.

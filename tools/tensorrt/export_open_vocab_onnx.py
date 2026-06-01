@@ -16,7 +16,25 @@ def _groundingdino_root(path):
     return root
 
 
-def _load_detector(config_path, checkpoint_path):
+def _resize_embedding(embedding, rows):
+    if embedding is None or embedding.num_embeddings == rows:
+        return embedding
+    if rows > embedding.num_embeddings:
+        raise ValueError(f"Cannot expand embedding from {embedding.num_embeddings} to {rows} rows")
+    resized = nn.Embedding(rows, embedding.embedding_dim)
+    resized.weight.data.copy_(embedding.weight.data[:rows])
+    return resized
+
+
+def _truncate_module_list(modules, length):
+    if modules is None or length is None or len(modules) == length:
+        return modules
+    if length < 1 or length > len(modules):
+        raise ValueError(f"Cannot truncate module list of length {len(modules)} to {length}")
+    return nn.ModuleList(list(modules)[:length])
+
+
+def _load_detector(config_path, checkpoint_path, num_queries=None, encoder_layers=None, decoder_layers=None):
     from groundingdino.models import build_model
     from groundingdino.util.misc import clean_state_dict
     from groundingdino.util.slconfig import SLConfig
@@ -41,6 +59,34 @@ def _load_detector(config_path, checkpoint_path):
             module.use_checkpoint = False
         if hasattr(module, "use_transformer_ckpt"):
             module.use_transformer_ckpt = False
+    if num_queries is not None:
+        model.num_queries = num_queries
+        model.transformer.num_queries = num_queries
+        if hasattr(model.transformer, "tgt_embed"):
+            model.transformer.tgt_embed = _resize_embedding(model.transformer.tgt_embed, num_queries)
+        if hasattr(model.transformer, "refpoint_embed"):
+            model.transformer.refpoint_embed = _resize_embedding(
+                model.transformer.refpoint_embed,
+                num_queries,
+            )
+        if hasattr(model, "refpoint_embed"):
+            model.refpoint_embed = _resize_embedding(model.refpoint_embed, num_queries)
+    if encoder_layers is not None:
+        encoder = model.transformer.encoder
+        encoder.layers = _truncate_module_list(encoder.layers, encoder_layers)
+        encoder.text_layers = _truncate_module_list(encoder.text_layers, encoder_layers)
+        encoder.fusion_layers = _truncate_module_list(encoder.fusion_layers, encoder_layers)
+        encoder.num_layers = encoder_layers
+        model.transformer.num_encoder_layers = encoder_layers
+    if decoder_layers is not None:
+        decoder = model.transformer.decoder
+        decoder.layers = _truncate_module_list(decoder.layers, decoder_layers)
+        decoder.num_layers = decoder_layers
+        model.bbox_embed = _truncate_module_list(model.bbox_embed, decoder_layers)
+        model.class_embed = _truncate_module_list(model.class_embed, decoder_layers)
+        decoder.bbox_embed = model.bbox_embed
+        decoder.class_embed = model.class_embed
+        model.transformer.num_decoder_layers = decoder_layers
     return model
 
 
@@ -130,20 +176,37 @@ class ExportNestedTensor:
 
 
 PRESETS = {
+    "jetson-tiny-e2d2": {
+        "height": 128,
+        "width": 192,
+        "max_text_len": 32,
+        "num_queries": 100,
+        "encoder_layers": 2,
+        "decoder_layers": 2,
+    },
     "jetson-ultra": {
         "height": 224,
         "width": 320,
         "max_text_len": 64,
+        "num_queries": None,
+        "encoder_layers": None,
+        "decoder_layers": None,
     },
     "jetson-balanced": {
         "height": 320,
         "width": 480,
         "max_text_len": 96,
+        "num_queries": None,
+        "encoder_layers": None,
+        "decoder_layers": None,
     },
     "desktop-640": {
         "height": 480,
         "width": 640,
         "max_text_len": 256,
+        "num_queries": None,
+        "encoder_layers": None,
+        "decoder_layers": None,
     },
 }
 
@@ -153,6 +216,9 @@ def _resolve_preset(args):
     args.height = args.height if args.height is not None else preset["height"]
     args.width = args.width if args.width is not None else preset["width"]
     args.max_text_len = args.max_text_len if args.max_text_len is not None else preset["max_text_len"]
+    args.num_queries = args.num_queries if args.num_queries is not None else preset["num_queries"]
+    args.encoder_layers = args.encoder_layers if args.encoder_layers is not None else preset["encoder_layers"]
+    args.decoder_layers = args.decoder_layers if args.decoder_layers is not None else preset["decoder_layers"]
     return args
 
 
@@ -162,6 +228,9 @@ def export(args):
     detector = _load_detector(
         Path(args.config).expanduser().resolve(),
         Path(args.checkpoint).expanduser().resolve(),
+        args.num_queries,
+        args.encoder_layers,
+        args.decoder_layers,
     )
     wrapper = OpenVocabGroundingDINO(detector).eval()
 
@@ -218,6 +287,9 @@ def main():
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--max-text-len", type=int, default=None)
+    parser.add_argument("--num-queries", type=int, default=None)
+    parser.add_argument("--encoder-layers", type=int, default=None)
+    parser.add_argument("--decoder-layers", type=int, default=None)
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--dynamo", action="store_true", help="Use the newer torch.export-based ONNX exporter")
     parser.add_argument("--output", required=True)

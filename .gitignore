@@ -10,6 +10,7 @@ install/
 log/
 
 # Local outputs
+artifacts/
 outputs/
 output/
 logs/
