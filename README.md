@@ -18,6 +18,7 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 - Includes rosbag replay, output recording, query switching, and runtime profiling scripts under `tools/rosbag_replay/`
 - Includes a Jetson Orin Nano ultra-compression launch preset after PyTorch FP16 proved unstable on-device
 - Documents an NVIDIA Isaac ROS Grounding DINO TensorRT proof-of-life baseline for comparison with our custom wrapper and Jetson compression experiments
+- Includes Isaac ROS Jetson preflight and launch helpers under `tools/isaac_ros/`
 
 ## Repository Layout
 
@@ -31,9 +32,11 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 │   └── groundingdino_node.py
 ├── tools/
 │   ├── rosbag_replay/
+│   ├── isaac_ros/
 │   └── tensorrt/
 └── docs/
     ├── isaac_ros_grounding_dino_local_test_2026-06-02.md
+    ├── jetson_isaac_ros_fast_path.md
     ├── jetson_orin_nano_ultra_config.md
     └── runtime_experiments_2026-05-27.md
 ```
@@ -232,6 +235,14 @@ Key local results:
 This is not a Jetson Orin Nano result yet. It is a quality-preserving baseline and integration template to compare against our custom PyTorch wrapper and the much smaller, lower-quality Jetson TensorRT compression experiment below.
 
 See [docs/isaac_ros_grounding_dino_local_test_2026-06-02.md](docs/isaac_ros_grounding_dino_local_test_2026-06-02.md) for the full local build, model install, launch, prompt, and sample-frame test notes.
+
+For the next Jetson Orin Nano deployment attempt, start with:
+
+```bash
+bash tools/isaac_ros/jetson_preflight.sh
+```
+
+Then follow [docs/jetson_isaac_ros_fast_path.md](docs/jetson_isaac_ros_fast_path.md). The short version is: build the TensorRT plan on the Jetson itself, prove `/set_prompt` and `/detections_output` on a single frame first, then move to rosbag replay.
 
 ## Jetson TensorRT Compression Findings
 
