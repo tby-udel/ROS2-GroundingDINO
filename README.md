@@ -17,6 +17,7 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
   - `/yolo/inference_image`
 - Includes rosbag replay, output recording, query switching, and runtime profiling scripts under `tools/rosbag_replay/`
 - Includes a Jetson Orin Nano ultra-compression launch preset after PyTorch FP16 proved unstable on-device
+- Documents an NVIDIA Isaac ROS Grounding DINO TensorRT proof-of-life baseline for comparison with our custom wrapper and Jetson compression experiments
 
 ## Repository Layout
 
@@ -32,6 +33,7 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 │   ├── rosbag_replay/
 │   └── tensorrt/
 └── docs/
+    ├── isaac_ros_grounding_dino_local_test_2026-06-02.md
     ├── jetson_orin_nano_ultra_config.md
     └── runtime_experiments_2026-05-27.md
 ```
@@ -213,6 +215,23 @@ ROS_DOMAIN_ID=82 bash tools/rosbag_replay/run_groundingdino_rosbag_experiment.sh
 ```
 
 See [docs/runtime_experiments_2026-05-27.md](docs/runtime_experiments_2026-05-27.md) for the local query switching and runtime profiling results.
+
+## Isaac ROS Grounding DINO Baseline
+
+We also tested NVIDIA Isaac ROS Grounding DINO as the official ROS 2 and TensorRT reference path. On the local x86 workstation with an RTX 4090, the official installer successfully downloaded NVIDIA's Grounding DINO Swin-Tiny ONNX model and generated a TensorRT plan. The official ROS graph launched, accepted runtime prompts through `/set_prompt`, and published `vision_msgs/msg/Detection2DArray` on `/detections_output`.
+
+Key local results:
+
+- TensorRT plan size: about `696 MB`
+- Engine image shape: `1x3x544x960`
+- Text length: `256`
+- Indoor sample scan: 11 frames, 67 detections
+- Outdoor sample scan: 14 frames, 68 detections
+- Dynamic prompt format: period-separated classes, for example `chair.box.stop sign.`
+
+This is not a Jetson Orin Nano result yet. It is a quality-preserving baseline and integration template to compare against our custom PyTorch wrapper and the much smaller, lower-quality Jetson TensorRT compression experiment below.
+
+See [docs/isaac_ros_grounding_dino_local_test_2026-06-02.md](docs/isaac_ros_grounding_dino_local_test_2026-06-02.md) for the full local build, model install, launch, prompt, and sample-frame test notes.
 
 ## Jetson TensorRT Compression Findings
 
