@@ -19,6 +19,7 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 - Includes a Jetson Orin Nano ultra-compression launch preset after PyTorch FP16 proved unstable on-device
 - Documents an NVIDIA Isaac ROS Grounding DINO TensorRT proof-of-life baseline for comparison with our custom wrapper and Jetson compression experiments
 - Includes Isaac ROS Jetson preflight and launch helpers under `tools/isaac_ros/`
+- Includes JetPack 6.2 / ROS Humble GroundingDINO smoke-test helpers under `tools/jetson_humble/`
 
 ## Repository Layout
 
@@ -33,9 +34,11 @@ It is designed to match the topic style used by our local NanoOWL/ADAONE experim
 ├── tools/
 │   ├── rosbag_replay/
 │   ├── isaac_ros/
+│   ├── jetson_humble/
 │   └── tensorrt/
 └── docs/
     ├── isaac_ros_grounding_dino_local_test_2026-06-02.md
+    ├── jetson_humble_groundingdino_plan.md
     ├── jetson_isaac_ros_fast_path.md
     ├── jetson_orin_nano_ultra_config.md
     └── runtime_experiments_2026-05-27.md
@@ -245,6 +248,15 @@ bash tools/isaac_ros/jetson_preflight.sh
 Then follow [docs/jetson_isaac_ros_fast_path.md](docs/jetson_isaac_ros_fast_path.md). The short version is: build the TensorRT plan on the Jetson itself, prove `/set_prompt` and `/detections_output` on a single frame first, then move to rosbag replay.
 
 Important compatibility note: Isaac ROS `release-3.2` matches JetPack 6.1/6.2 and ROS 2 Humble, but it does not include `isaac_ros_grounding_dino`. GroundingDINO appears in the Isaac ROS 4.x object detection stack, while Isaac ROS 4.0 moved to the JetPack 7 / Ubuntu 24.04 / CUDA 13 line. On a JetPack 6.2 Orin Nano, the official 3.2 package route is therefore not a GroundingDINO route.
+
+For a confirmed JetPack 6.2 / Ubuntu 22.04 / ROS Humble Jetson, start with the native Humble wrapper path instead:
+
+```bash
+bash tools/jetson_humble/jetson_humble_preflight.sh
+bash tools/jetson_humble/run_pytorch_ultra_smoke.sh
+```
+
+See [docs/jetson_humble_groundingdino_plan.md](docs/jetson_humble_groundingdino_plan.md).
 
 ## Jetson TensorRT Compression Findings
 
