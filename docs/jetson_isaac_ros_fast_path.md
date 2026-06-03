@@ -34,6 +34,38 @@ bash tools/isaac_ros/jetson_preflight.sh | tee jetson_preflight_$(date +%Y%m%d_%
 
 Read the "Isaac ROS Compatibility Hint" section first.
 
+## Release Compatibility Check
+
+We verified the official NVIDIA sources before the Jetson deployment attempt:
+
+- The local workstation success used Isaac ROS `release-4.4`, ROS 2 Jazzy, and the package `ros-jazzy-isaac-ros-grounding-dino`.
+- Isaac ROS `release-3.2` targets JetPack 6.1/6.2 and ROS 2 Humble, which matches our likely Jetson Orin Nano environment.
+- However, `release-3.2` does not contain Grounding DINO.
+
+Evidence from `isaac_ros_object_detection` branches:
+
+```text
+release-3.0: detectnet, rtdetr, yolov8
+release-3.1: detectnet, rtdetr, yolov8
+release-3.2: detectnet, rtdetr, yolov8
+release-4.0+: detectnet, grounding_dino, rtdetr, yolov8
+```
+
+The Isaac ROS 3.x apt package index also has no `ros-humble-isaac-ros-grounding-dino` package for either `amd64` or `arm64`.
+
+Practical conclusion:
+
+```text
+Isaac ROS 3.2 is the right JetPack 6.2 compatibility line,
+but it is not an official Grounding DINO line.
+```
+
+So on a JetPack 6.2 / Humble Jetson, do not spend time trying to install a nonexistent official `isaac_ros_grounding_dino` package from 3.2. The realistic options are:
+
+1. Try the Isaac ROS 4.x Grounding DINO container/source path only if the Jetson software stack can support it.
+2. Backport the 4.x Grounding DINO package into a 3.2/Humble environment, which is a real porting task and may hit CUDA/TensorRT/NITROS API mismatches.
+3. Use our existing Humble-compatible `ROS2-GroundingDINO` wrapper as the Jetson-compatible ROS boundary, while reusing the official 4.x ONNX/TensorRT/prompt/decoder design as a reference.
+
 ### Likely Path A: Ubuntu 24.04 / Jazzy / Newer JetPack
 
 Try the official Isaac ROS `release-4.4` binary/container path first.

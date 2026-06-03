@@ -244,6 +244,8 @@ bash tools/isaac_ros/jetson_preflight.sh
 
 Then follow [docs/jetson_isaac_ros_fast_path.md](docs/jetson_isaac_ros_fast_path.md). The short version is: build the TensorRT plan on the Jetson itself, prove `/set_prompt` and `/detections_output` on a single frame first, then move to rosbag replay.
 
+Important compatibility note: Isaac ROS `release-3.2` matches JetPack 6.1/6.2 and ROS 2 Humble, but it does not include `isaac_ros_grounding_dino`. GroundingDINO appears in the Isaac ROS 4.x object detection stack, while Isaac ROS 4.0 moved to the JetPack 7 / Ubuntu 24.04 / CUDA 13 line. On a JetPack 6.2 Orin Nano, the official 3.2 package route is therefore not a GroundingDINO route.
+
 ## Jetson TensorRT Compression Findings
 
 We tested an aggressively compressed open-vocabulary TensorRT path on a Jetson Orin Nano using the local NanoOWL Docker environment. The goal was to see whether GroundingDINO could be compressed enough to run directly on the small Jetson while preserving open-vocabulary prompts.
